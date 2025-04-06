@@ -1,0 +1,481 @@
+;------------------------------MACROS-------------------------------------------------------------
+LEA:        MACRO(ra, label)
+                or ra, r0, low(label)
+                or.u ra, ra, high(label)
+
+            ENDMACRO
+
+LOAD:       MACRO(ra, label)
+                LEA(ra, label)
+                ld ra, ra, 0
+
+            ENDMACRO
+
+DBNZ:       MACRO(ra, label)
+                sub ra, ra, 1
+                cmp r5, ra, 0
+                bb0 4, r5, label
+
+            ENDMACRO
+
+AVANZAR:    MACRO(ra, label)
+                subu ra, ra, 1
+                cmp r28, ra, r0
+                bb0 eq, ra, label
+
+            ENDMACRO
+
+PUSH:       MACRO(ra)
+                sub r30, r30, 4
+                st ra, r30, 0
+
+            ENDMACRO
+
+POP:        MACRO(ra)
+                ld ra, r30, 0
+                add r30, r30, 4
+
+            ENDMACRO
+
+SWAP:       MACRO(ra,rb)
+                or r1, ra, ra
+                or ra, rb, rb
+                or rb, r1, r1
+
+            ENDMACRO
+;------------------------------END-MACROS---------------------------------------------------------
+;------------------------------PROGRAMA-----------------------------------------------------------
+                    org         0
+nF:                 data 0x00000000         ;Inicializamos NF a 0
+
+;------------------------------END-PROGRAMA-------------------------------------------------------
+
+Sqrt:               ld r5, r30, 0           ;Cargamos num
+                    ld r6, r30, 0           ;Cargamos num (a)
+                    cmp r3, r6, 2           ;Comparamos en r3 num con 2
+                    bb1 lt, r3, fin_sqrt    ;Si es menor que 2 acabamos
+                    ld r7, r0, 1            ;Cargamos 1 en r7 (b)
+        bucle_sqrt: add r6, r6, r7          ;r6 <- (a+b)
+                    divs r6, r6, 2          ;r6 <- (a+b)/2
+                    divs r7, r5, r6         ;r7 <- num/a
+                    cmp r3, r6, r7          ;Comparamos en r3 a con b
+                    bb1 gt, r3, no_cambio
+                    SWAP(r6, r7)            ;Cambiamos a por b
+        no_cambio:  sub r8, r6, r7
+                    cmp r3, r8, 1           ;Comparamos en r3 con 1
+                    bb1 gt, r3, bucle_sqrt  ;Si no es menor o igual saltamos al inicio del bucle
+                    or r5, r7, r0
+        fin_sqrt:   or r29, r5, r0          ;Si es menor o igual a 1 devolvemos b
+                    jmp(r1)
+
+nFiltrados:         ld r6, r30, 0           ;r6 <- oper
+                    cmp r4, r6, r0
+                    bb0 lt, r4, fin_nf      ;Si r6 > 0 fin_nf
+                    LOAD(r6,nF)             ;r6 <- nf
+                    sub r6, r6, 1           ;r6 <- r6-1
+                    cmp r4, r6, r0          ;Si r6 > 0 fin_nf
+                    bb0 lt, r4, fin_nf
+                    xor r6, r6, r6
+        fin_nf:     LEA(r7,nF)              ;r7 <- nf
+                    st  r6, r7, 0           ;M(r7)=nf <- r6
+                    or  r29, r6, 0
+                    jmp(r1)
+
+Comp:               ld r15, r30, 0          ;r15 <- dir Imagen 1
+                    ld r7, r30, 4           ;r7 <- dir Imagen 2
+                    or r8, r0, r0           ;r8 <- 0
+                    ld r9, r15, 0           ;r9 <- M(r15)=M
+                    ld r10, r15, 4          ;r10 <- M(r15)=N
+                    muls r11, r10, r9       ;r11 <- MxN
+                    add r15, r15, 8         ;posicionamos el puntero de la primera imagen en el primer bit
+                    add r7, r7, 8           ;idem
+        Comp_Fila:  ld r10, r30, 0          ;r10 <- N
+                    ld r10, r10, 4          ;repetimos unicamente debido al bucle
+        Comp_Col:   ld.b r12, r15, 0        ;r12 <- 1erbit IMAGEN1
+                    ld.b r13, r7, 0         ;r13 <- 1erbit IMAGEN2
+                    sub r14, r12, r13       ;r14 <- r12-r13
+                    muls r14, r14, r14      ;r14 <- (r14)^2
+                    add r8, r8, r14         ;Dif = Dif + (Imagen1ij – Imagen2ij)^2
+                    add r15, r15, 1         ;Siguiente entero IMAGEN1
+                    add r7, r7, 1           ;Siguiente entero IMAGEN2
+                    DBNZ (r10, Comp_Col)
+                    DBNZ (r9, Comp_Fila)
+                    PUSH (r8)               ;Metemos diff en la pila
+                    bsr Sqrt                ;Llamamos a sqrt
+                    add r30, r30, 4         ;Restauramos puntero de pila
+                    or r29, r29, r29        ;Sqrt deja el resultado en r29
+                    jmp(r1)                 ;Fin Comp
+
+SubMatriz:          ld r6, r30, 0           ;r6 <- dir Imagen
+                    ld r7, r30, 4           ;r7 <- dir SubImg
+                    ld r8, r30, 8           ;r8 <- i
+                    ld r9, r30, 12          ;r9 <- j
+                    ld r10, r6,  0          ;M <- r10
+                    ld r11, r6,  4          ;N <- r11
+                    add r6, r6, 8           ;Posicionamos el puntero de la primera imagen en el primer bit
+                    muls r8, r8, r11        ;r8 <- i x NumColumnas(N)   (desp de filas)
+                    add  r8, r8, r9         ;r8 <- Desplazamiento hasta byte i,j (desp de filas + desp en esa fila)
+                    add  r6, r6, r8         ;r6 <- Dir byte i,j
+                    add  r13, r6, r11       ;r13 <- Byte de debajo de i,j (pos actual + num col) (i+1,j)
+                    sub  r12, r6, r11       ;r12 <- Dir byte de encima de i,j (pos actual - num col)  (i-1,j)
+                    sub  r6, r6, 1          ;r6 <- Dir byte anterior de i,j       (i,j-1)
+                    sub  r13, r13,1         ;r13 <- Dir anterior al byte descrito (i+1,j-1)
+                    sub  r12, r12,1         ;r12 <- Dir anterior al byte descrito (i-1,j-1)
+                    ld.b r14, r12, 0        ;r14 <- Byte (i-1,j-1)
+                    st.b r14, r7 ,0         ;Metemos byte (0,0)
+                    add  r7, r7,  1         ;Avanzamos puntero
+                    add  r12, r12, 1        ;Avanzamos pixel im
+                    ld.b r14, r12, 0        ;r14 <- Byte (i-1,j)
+                    st.b r14, r7, 0         ;Metemos Byte (0,1)
+                    add  r7, r7,  1
+                    add  r12, r12, 1
+                    ld.b r14, r12, 0        ;r14 <- byte (i-1,j+1)
+                    st.b r14, r7, 0         ;Metemos Byte(0,2)
+                    add  r7, r7,  1
+                    ld.b r14, r6,  0        ;r14<- byte (i,j-1)
+                    st.b r14, r7, 0         ;Metemos Byte(1,0)
+                    add  r7, r7,  1
+                    add  r6, r6,  1
+                    ld.b r14, r6,  0        ;r14 <- byte (i,j)
+                    st.b r14, r7, 0         ;Metemos byte(1,1)=byte(i,j de la matriz)
+                    add  r7, r7,  1
+                    add  r6, r6,  1
+                    ld.b r14, r6,  0        ;r14 <- byte (i,j+1)
+                    st.b r14, r7, 0         ;Metemos byte(1,2)
+                    add  r7, r7,  1
+                    ld.b r14, r13, 0        ;r14 <- byte (i+1,j-1)
+                    st.b r14, r7, 0         ;Metemos byte(2,0)
+                    add  r7, r7,  1
+                    add  r13, r13, 1
+                    ld.b r14, r13, 0        ;r14 <- byte (i+1,j)
+                    st.b r14, r7, 0         ;Metemos byte(2,1)
+                    add  r7, r7,  1
+                    add  r13, r13, 1
+                    ld.b r14, r13, 0        ;r14 <- byte (i+1,j+1)
+                    st.b r14, r7, 0         ;Metemos byte(2,2)
+                    jmp (r1)
+
+ValorPixel:         ld r6, r30, 0           ;r6 <- Dir SubImg1
+                    ld r7, r30, 4           ;r7 <- Dir MFiltro
+                    or r8, r0, r0           ;ACC <- 0
+                    or r12, r0, 9           ;r12 <- 9(contador del bucle)
+                    or r13, r0, 256         ;r13 <- Valor de la constante K=256
+                    or r14, r0, r0          ;r14 <- r0
+        Bucle_VP:   ld.bu r9, r6 , 0        ;r9 <- primer elemento de SubImg1
+                    ld r10, r7, 0           ;r10 <- primer elemento de MFiltro (Numerador)
+                    ld r17, r7, 4           ;r17 <- primer elemento de MFiltro (Denominador)
+                    add r11, r9, 0          ;r11 <- primer elemento de SubImg1 sin signo
+                    muls r15, r11, r13      ;r15 <- Elemento SubImagen1 x 256
+                    muls r16, r15, r10      ;r16 <- r15 x r10 (Numerador)
+                    divs r16, r16, r17      ;r16 <- r16 / r17 (Denominador)
+                    add r8, r8 , r16        ;ACC <- ACC+r11
+                    add r6, r6, 1           ;Avanzamos puntero SubImg1
+                    add r7, r7, 8           ;Avanzamos puntero MFiltro
+                    DBNZ(r12,Bucle_VP)      ;Contador-- y si no 0 vamos a Bucle_Vp
+                    divs r29, r8, r13       ;r29 <- ACC / K=256
+                    jmp(r1)
+
+FilPixel:           PUSH(r1)                ;Guarda la direccion de retorno
+                    PUSH(r31)               ;Guarda el puntero al marco de pila llamante
+                    or r31, r30, r0         ;Crea el nuevo marco de pila a partir de SP (r30)
+                    sub r30, r30, 12        ;Reserva espacio para SubMatriz
+                    or r9, r30, r0          ;Guardamos direccion de la SubMatriz (=r31-12)
+                    ld r6, r31, 8           ;r24 <- Dir IMAGEN
+                    ld r10, r6, 0           ;r10 <- M
+                    ld r11, r6, 4           ;r11 <- N
+                    ld r7, r31, 12          ;r25 <- i
+                    ld r8, r31, 16          ;r26 <- j
+                    cmp r4, r7, r0          ;si i==0 estamos en extremo
+                    bb1 eq, r4, Borde
+                    cmp r4, r8, r0          ;si j==0 estamos en extremo
+                    bb1 eq, r4, Borde
+                    sub r16, r10, 1
+                    cmp r4, r7, r16         ;si i==M-1 estamos en extremo
+                    bb1 eq, r4, Borde
+                    sub r16, r11,1
+                    cmp r4, r8, r16         ;si j==M-1 estamos en extremo
+                    bb1 eq, r4, Borde
+                    PUSH(r8)                ;4to parametro de Submatriz = j
+                    PUSH(r7)                ;3er parametro de Submatriz = i
+                    PUSH(r9)                ;2ndo parametro de Submatriz = Dir Submatriz
+                    PUSH(r6)                ;1er parametro de Submatriz = Dir de Imagen
+                    bsr SubMatriz
+                    add r30,r30, 16         ;Equivalente a = POP(r6)&POP(r5)&POP(r7)&POP(r8)
+                    or r9, r30, r0          ;Guardamos direccion de la SubMatriz (=r31-12)
+                    ld r6, r31, 20          ;r6 <- dirr MFiltro
+                    PUSH (r6)               ;2ndo parametro ValorPixel = MFiltro
+                    PUSH (r9)               ;1er parametro ValorPixel = SubImg
+                    bsr ValorPixel
+                    add r30, r30, 8         ;Equivalente a POP(r9)&POP(r6)
+                    cmp r4, r29, 0          ;Si r29<0 ajustamos a 0
+                    bb1 lt, r4, Ajuste_0
+                    cmp r4, r29, 255        ;Si r29>255 ajustamos a 255
+                    bb1 gt, r4, Ajuste_255
+        Fin_FP:     or r30, r31, r0         ;Restaura el puntero de pila al valor del puntero de marco
+                    POP(r31)
+                    POP(r1)
+                    jmp(r1)
+        Ajuste_0:   or r29, r0, r0
+                    br Fin_FP
+        Ajuste_255: or r29, r0, 255
+                    br Fin_FP
+        Borde:      or r29, r29, r29
+                    br Fin_FP
+
+Filtro:             PUSH(r1)                ;Guarda la direccion de retorno
+                    PUSH(r31)               ;Guarda el puntero al marco de pila llamante
+                    or r31, r30, r0         ;Crea el nuevo marco de pila a partir de SP (r30)
+                    ld r19, r30,8           ;r19 <- Dir img a filtrar
+                    ld r20, r30,12          ;r20 <- Dir img filtrada
+                    ld r21, r19,0           ;r21 <- M
+                    st r21, r20,0           ;M de img a filtrar a M img filtrada
+                    add r19, r19, 4         ;Apuntamos a N de img a filtrar
+                    ld r19, r19, 0          ;r19 <- N
+                    st r19, r20, 4          ;N de img a filtrar a N img filtrada
+                    add r20,r20,8           ;r20 <- dirr 1er pixel img filtrada
+                    xor r17, r17,r17        ;r17 <- i=0
+        Bucle_Fil_i:ld r19,r31,8            ;r19 <- dirr img a filtrar
+                    ld r19,r19,4            ;r19 <- N
+                    xor r18, r18,r18        ;r18 <- j=0
+        Bucle_Fil_j:ld r6,r31,8             ;r6 <- dirr img a filtrar
+                    ld r9, r31, 16          ;r9 <- dir filtro
+                    PUSH(r21)               ;Salvamos valor M
+                    PUSH(r20)               ;Salvamos valor punt a img
+                    PUSH(r19)               ;Salvamos valor N
+                    PUSH(r9)                ;4to parametro MFiltro
+                    PUSH(r18)               ;3er parametro j
+                    PUSH(r17)               ;2ndo parametro i
+                    PUSH(r6)                ;1er param img a filtrar
+                    bsr FilPixel
+                    POP(r6)
+                    POP(r17)
+                    POP(r18)
+                    POP(r9)
+                    POP(r19)
+                    POP(r20)
+                    POP(r21)
+                    st.b r29, r20,0         ;Guardamos el valor resultante en la posicion correspondiente de img filtrada
+                    add r20,r20,1           ;Avanzamos punt img a filtrar
+                    add r18,r18,1           ;j++
+                    DBNZ(r19,Bucle_Fil_j)   ;N--
+                    add r17,r17,1           ;i++
+                    DBNZ(r21,Bucle_Fil_i)   ;M-- y N=N Original
+                    or r30, r31, r0         ;Restaura el puntero de pila al valor del puntero de marco
+                    POP(r31)
+                    POP(r1)
+                    jmp(r1)
+
+FiltRec:            PUSH(r1)                ;Guarda la direccion de retorno
+                    PUSH(r31)               ;Guarda el puntero al marco de pila llamante
+                    or r31, r30, r0         ;Crea el nuevo marco de pila a partir de SP (r30)
+                    ld r22, r31, 8          ;r22 <- Dir Img
+                    ld r23, r22, 4          ;r23 <- M
+                    ld r22, r22, 0          ;r22 <- N
+                    muls r22, r22, r23      ;r22 <- MxN
+                    add r22, r22, 7         ;r22 <- MxN + 4 + 3 (Espacio para Imagen temporal)
+                    or r6, r0, 4
+        Bucle_Temp: add r22, r22, 1
+                    divs r23, r22, r6
+                    muls r23, r23, r6
+                    cmp r4, r22, r23
+                    bb0 eq, r4, Bucle_Temp
+                    sub r30, r30, r22       ;Reservamos espacio para ImgTemp
+                    PUSH(r22)               ;Metemos r22 en la pila
+                    ld r6, r31, 8           ;r6 <- Dir ImgIn
+                    ld r7, r31, 12          ;r7 <- Dir ImgOut
+                    ld r8, r31, 16          ;r8 <- MFiltro
+                    PUSH(r8)
+                    PUSH(r7)
+                    PUSH(r6)
+                    bsr Filtro              ;Filtramos la imagen
+                    add r30, r30, 12
+                    POP(r22)                ;r30 <- ImgTemp
+                    or r6, r30, 0           ;r6 <- Dir del primer bit de la img tmp
+                    ld r7, r31, 12          ;Copiamos dir 1er bit de img filtrada
+        Bucle_Copia:ld.b r8, r7, 0          ;r8 <- bit img filtrada
+                    st.b r8, r6, 0          ;Bit img filtrada->bit imgTemp
+                    addu r6, r6, 1          ;Avanzamos punteros
+                    addu r7, r7, 1
+                    DBNZ(r22,Bucle_Copia)
+                    sub r6, r0, 1           ;r6 <- -1
+                    PUSH(r6)
+                    bsr nFiltrados          ;nFiltrados(-1)
+                    add r30, r30, 4
+                    cmp r4, r29, r0         ;si r29==0 retornamos al llamante
+                    bb1 eq, r4, Fin_Fil_Nf  ;r29 tiene que ser -1
+                    ld r6, r31, 8           ;r6 <- dirr ImgIn
+                    ld r7, r31, 12          ;r7 <- dirr ImgOut
+                    PUSH(r7)
+                    PUSH(r6)
+                    bsr Comp
+                    add r30, r30, 8         ;r30-(apunta)->ImgTemp
+                    ld r9, r31, 20          ;r9 <- NCambios (valor)
+                    cmp r4, r29, r9         ;Si r29 < NCambios acabamos
+                    bb1 lt, r4, Fin_Fil_Rec
+                    or r6, r30, 0           ;r6 <- Dir ImgTemp
+                    ld r7, r31, 12          ;r7 <- Dir ImgOut
+                    ld r8, r31, 16          ;r8 <- Dir MFiltro
+                    ld r9, r31, 20          ;r9 <- NCambios
+                    PUSH(r9)
+                    PUSH(r8)
+                    PUSH(r7)
+                    PUSH(r6)
+                    bsr FiltRec
+        Fin_Fil_Rec:or r30, r31, r0         ;Restaura el puntero de pila al valor del puntero de MP
+                    POP(r31)
+                    POP(r1)
+                    jmp(r1)
+        Fin_Fil_Nf: sub r29, r0, 1
+                    br Fin_Fil_Rec
+
+;--------------------------------DATOS-PRUEBAS----------------------------------------------------
+oper0:          data 0
+
+MFiltro:        data 1,2, 1,3, 1,4
+                data 2,5, 2,6, 2,8
+                data 3,9, 3,6, 3,1
+
+Imagen1:		data	4, 8
+				data	0x00000000, 0x00000000
+				data	0x00000000, 0x00002100
+				data	0x00000000, 0x00000000
+				data	0x00000000, 0x00000000
+
+Imagen2:		data	4, 8
+				data	0x00000000, 0x00000000
+				data	0x00000000, 0x00000000
+				data	0x00000000, 0x00000000
+				data	0x00000000, 0x00000000
+
+
+SubImg1:		data 	0x01010101
+				data 	0x01010101
+				data 	0x01
+
+MFiltroVPPos:	data 1,2, 1,3, 1,4
+                data 2,5, 2,6, 2,8
+                data 3,9, 3,6, 3,1
+
+ImagenSM:		data	4, 4
+				data 	0x40404040
+				data	0x40202040
+				data	0x40202040
+				data	0x40404040
+
+SubImg:			data 	0x01010101, 0x01010101, 0x01
+
+iSubImg1:		data 	0
+jSubImg1:		data 	0
+
+
+ImagenFP1:		data 	5, 5
+				data 	0x44332211, 0x03020155
+				data 	0x22210504, 0x31252423
+				data 	0x35343332, 0x44434241
+				data 	0x00000045
+
+MFiltroFP:		data 1,2, 1,3, 1,4
+                data 2,5, 2,6, 2,8
+                data 3,9, 3,6, 3,1
+
+iFP:			data 	2
+jFP:			data 	3
+
+ImagenFiltro1:	data 	4, 8
+				data 	0x04030201, 0x07060504
+				data 	0x14134211, 0x17168514
+				data 	0x24232221, 0x27262574
+				data 	0x34333231, 0x37363534
+
+ImFiltrada:		res 	40
+
+MFiltroFiltro:	data 1,2, 1,3, 1,4
+                data 2,5, 2,6, 2,8
+                data 3,9, 3,6, 3,1
+
+ImagenInFR1:	data 	4, 4
+				data 	0x04030201
+				data 	0x0D0E0F10
+				data 	0x05040302
+				data 	0x23222120
+
+ImagenOutFR1:	res 	24
+				data 	0xAAAAAAAA
+				data	0xAAAAAAAA
+
+MFiltroFR1:		data 1,2, 1,3, 1,4
+                data 2,5, 2,6, 2,8
+                data 3,9, 3,6, 3,1
+
+NCambiosFR1:	data	40
+
+;---------------------------------------PROGRAMA-PRUEBAS------------------------------------------
+                org    	10000
+NFil0:	    	LEA		(r30,60000)
+				LOAD	(r10,oper0)
+				PUSH	(r10)
+				bsr		nFiltrados
+				stop
+
+Comp1:		    LEA		(r30,60000)
+				LEA		(r5,Imagen1)
+				LEA		(r6,Imagen2)
+				PUSH	(r6)
+				PUSH	(r5)
+				bsr		Comp
+				stop
+
+VP1:		    LEA		(r30,60000)
+				LEA		(r5,SubImg1)
+				LEA		(r6,MFiltroVPPos)
+				PUSH	(r6)
+				PUSH	(r5)
+				bsr		ValorPixel
+				stop
+
+SM1:		    LEA		(r30,60000)
+				LEA		(r5,ImagenSM)
+				LEA		(r6,SubImg)
+				LOAD	(r7,iSubImg1)
+				LOAD	(r8,jSubImg1)
+				PUSH	(r8)
+				PUSH	(r7)
+				PUSH	(r6)
+				PUSH	(r5)
+				bsr		SubMatriz
+				stop
+
+FP1:		    LEA		(r30,60000)
+				LEA		(r5,ImagenFP1)
+				LOAD	(r6,iFP)
+				LOAD	(r7,jFP)
+				LEA		(r8,MFiltroFP)
+				PUSH	(r8)
+				PUSH	(r7)
+				PUSH	(r6)
+				PUSH	(r5)
+				bsr		FilPixel
+				stop
+
+Filtro1:	    LEA		(r30,60000)
+				LEA		(r5,ImagenFiltro1)
+				LEA		(r6,ImFiltrada)
+				LEA		(r7,MFiltroFiltro)
+				PUSH	(r7)
+				PUSH	(r6)
+				PUSH	(r5)
+				bsr 	Filtro
+				stop
+
+FiltRec1:	    LEA		(r30,60000)
+				LEA		(r5,ImagenInFR1)
+				LEA		(r6,ImagenOutFR1)
+				LEA		(r7,MFiltroFR1)
+				LOAD	(r9,NCambiosFR1)
+				PUSH	(r9)
+				PUSH	(r8)
+				PUSH	(r7)
+				PUSH	(r6)
+				PUSH	(r5)
+				bsr		FiltRec
+				stop
